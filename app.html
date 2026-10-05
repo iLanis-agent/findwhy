@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FindWhy - why did find print that?</title>
+<style>
+:root{--bg:#10151c;--panel:#18202b;--line:#2a3646;--tx:#e6edf5;--mut:#92a1b5;--ok:#4cc38a;--no:#e5675f;--acc:#6aa9ff;--warn:#e8b64c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:0 0 4px}p.sub{color:var(--mut);margin:0 0 16px}
+code,.mono,input,pre{font-family:ui-monospace,Menlo,Consolas,monospace}
+.cmd{display:flex;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:0 10px}
+.cmd span{color:var(--mut);white-space:pre}
+.cmd input{flex:1;background:none;border:0;color:var(--tx);font-size:15px;padding:12px 4px;outline:none;min-width:0}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.presets button{background:var(--panel);border:1px solid var(--line);color:var(--tx);border-radius:6px;padding:5px 9px;cursor:pointer;font-size:13px}
+.presets button:hover,.presets button.on{border-color:var(--acc)}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:12px 0}
+.box h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 6px}
+.err{border-color:var(--no);color:var(--no)}
+.warn{border-left:3px solid var(--warn);padding-left:10px;margin:6px 0}
+.row{display:grid;grid-template-columns:22px minmax(150px,230px) 1fr;gap:8px;padding:4px 0;border-top:1px solid var(--line);font-size:13px;align-items:start}
+.row:first-of-type{border-top:0}.p{color:var(--ok)}.n{color:var(--mut)}
+.t{font-size:12px;color:var(--mut);word-break:break-word}.t b{font-weight:600}.t .y{color:var(--ok)}.t .x{color:var(--no)}
+.pr{color:var(--warn)}
+footer{color:var(--mut);font-size:12px;margin-top:18px}
+a{color:var(--acc)}
+.tree{max-height:none}
+</style></head><body><main>
+<h1>FindWhy</h1>
+<p class="sub">Type the expression after <code>find .</code>. See how GNU find reads it, which files it prints, and why each one was or was not printed.</p>
+<div class="cmd"><span class="mono">find . </span><input id="in" spellcheck="false" autocomplete="off" aria-label="find expression"></div>
+<div class="presets" id="presets"></div>
+<div id="out"></div>
+<div class="box"><h2>Demo tree</h2><div class="mono" style="font-size:12px;color:var(--mut)">The app runs your expression on a fixed 27-entry tree (src/, docs/, logs/, node_modules/, .git/, empty.txt, docs/old/ ...). Quote patterns as in a shell: <code>-name '*.c'</code>, and write parentheses as <code>'('</code> or <code>\(</code>.</div></div>
+<footer>Not covered: -exec, -delete, -ls, -size, -mtime, -perm, -regex, -L, -depth, -o/-a mixed with ",". Output order is sorted; real find uses directory order. Evaluation shown is the documented left-to-right, short-circuit one. <a href="index.html">About &amp; tests</a></footer>
+</main>
+<script src="engine.js"></script>
+<script>
+var PRESETS=[
+['Plain name',"-name '*.c'"],
+['Print only .md',"-name '*.md' -o -name '*.txt' -print"],
+['Prune (no action)',"-name node_modules -prune -o -name '*.js'"],
+['Prune + print',"-name node_modules -prune -o -name '*.js' -print"],
+['Skip .git',"-path ./.git -prune -o -type f -print"],
+['Grouped or',"-type f '(' -name '*.c' -o -name '*.h' ')'"],
+['Ungrouped or',"-type f -name '*.c' -o -name '*.h'"],
+['Not',"-type f ! -name '*.log*'"],
+['Depth',"-maxdepth 1 -type d"],
+['Empty',"-empty"],
+['Case',"-iname 'readme*'"],
+['Print twice',"-name '*.h' -print -print"]
+];
+var inp=document.getElementById('in'),out=document.getElementById('out'),pb=document.getElementById('presets');
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e;}
+function box(title,cls){var b=el('div','box'+(cls?' '+cls:''));if(title)b.appendChild(el('h2',null,title));out.appendChild(b);return b;}
+function hasKind(n,k){if(!n)return false;if(n.k===k)return true;if(n.kids)return n.kids.some(function(x){return hasKind(x,k);});if(n.kid)return hasKind(n.kid,k);return false;}
+function render(){
+  out.textContent='';
+  var s=inp.value,R;
+  try{R=FindWhy.run(s);}catch(e){var b=box('find would reject this','err');b.appendChild(el('div','mono',e.message));return;}
+  var b1=box('How find reads it');
+  b1.appendChild(el('div','mono',R.ast?R.full:'(empty expression)'));
+  var ex=el('div','t','With precedence made explicit (! first, then -a, then -o). Effective: ');ex.appendChild(el('code',null,R.effective));b1.appendChild(ex);
+  var W=[];
+  if(R.implicitPrint)W.push(hasKind(R.ast,'prune')?'No -print in the expression, so find adds one around the whole thing. A -prune directory is itself true, so it gets printed too.':'No -print in the expression, so find prints whatever the whole expression matches.');
+  else W.push('You used -print, so find does not add its own. Only paths where evaluation reaches a -print are printed.');
+  if(R.hasAction&&R.ast&&R.ast.k==='or')W.push('At the top level, an -o splits the expression into branches. A -print inside one branch only applies to what that branch matches.');
+  if(hasKind(R.ast,'opt'))W.push('-maxdepth / -mindepth apply to the whole run, wherever you write them (find warns if they follow a test).');
+  if((R.hasAction||hasKind(R.ast,'prune'))&&R.ast&&(R.ast.k==='or'||R.ast.k==='and'))W.push('GNU find may reorder tests when -print or -prune sit among other tests joined by -a or -o; this page shows the documented left-to-right behaviour, and real find can differ in rare cases.');
+  W.forEach(function(w){b1.appendChild(el('div','warn',w));});
+  var b2=box('Result: '+R.printed.length+' line'+(R.printed.length===1?'':'s')+' printed');
+  var seen={};
+  R.results.forEach(function(r){seen[r.path]=1;});
+  var tree=el('div','tree');
+  FindWhy.TREE.forEach(function(e){
+    var r=R.results.filter(function(x){return x.path===e.path;})[0];
+    var row=el('div','row');
+    if(!r){row.appendChild(el('div','n','·'));row.appendChild(el('div','mono n',e.path+(e.type==='d'?'/':'')));row.appendChild(el('div','t','not visited (inside a pruned directory, or deeper than -maxdepth)'));tree.appendChild(row);return;}
+    row.appendChild(el('div',r.printed?'p':'n',r.printed?'✔':'–'));
+    var nm=el('div','mono '+(r.printed?'p':'n'),e.path+(e.type==='d'?'/':'')+(r.prints>1?'  ×'+r.prints:''));row.appendChild(nm);
+    var t=el('div','t');
+    if(!r.trace.length)t.textContent='not tested (above -mindepth)';
+    r.trace.forEach(function(x,i){
+      if(i)t.appendChild(document.createTextNode('  →  '));
+      var sp=el('span',x[1]?'y':'x',x[0]+(x[1]?' true':' false'));t.appendChild(sp);
+    });
+    if(r.pruned)t.appendChild(el('span','pr','   (pruned: not entered)'));
+    row.appendChild(t);tree.appendChild(row);
+  });
+  b2.appendChild(tree);
+  var b3=box('Printed');var pre=el('pre',null,R.printed.join('\n')||'(nothing)');pre.style.margin=0;pre.style.fontSize='13px';b3.appendChild(pre);
+}
+PRESETS.forEach(function(p){var b=el('button',null,p[0]);b.type='button';b.onclick=function(){inp.value=p[1];[].forEach.call(pb.children,function(c){c.classList.remove('on');});b.classList.add('on');render();};pb.appendChild(b);});
+inp.addEventListener('input',function(){[].forEach.call(pb.children,function(c){c.classList.remove('on');});render();});
+inp.value=PRESETS[3][1];pb.children[3].classList.add('on');render();
+</script></body></html>
