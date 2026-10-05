@@ -37,12 +37,12 @@ a{color:var(--acc)}
 <script>
 var PRESETS=[
 ['Plain name',"-name '*.c'"],
-['Print only .md',"-name '*.md' -o -name '*.txt' -print"],
+['Print on one branch',"-name '*.md' -o -name '*.txt' -print"],
 ['Prune (no action)',"-name node_modules -prune -o -name '*.js'"],
 ['Prune + print',"-name node_modules -prune -o -name '*.js' -print"],
 ['Skip .git',"-path ./.git -prune -o -type f -print"],
 ['Grouped or',"-type f '(' -name '*.c' -o -name '*.h' ')'"],
-['Ungrouped or',"-type f -name '*.c' -o -name '*.h'"],
+['Ungrouped or',"-name '*.c' -o -name '*.h' -type d"],
 ['Not',"-type f ! -name '*.log*'"],
 ['Depth',"-maxdepth 1 -type d"],
 ['Empty',"-empty"],
